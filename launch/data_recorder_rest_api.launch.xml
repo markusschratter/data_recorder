@@ -1,0 +1,5 @@
+<launch>
+  <node pkg="data_recorder" exec="data_recorder_rest" name="data_recorder_rest_api" namespace="system" output="screen">
+    <param from="$(find-pkg-share data_recorder)/config/data_recorder_rest_api.param.yaml"/>
+  </node>
+</launch>

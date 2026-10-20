@@ -1,0 +1,17 @@
+<launch>
+  <arg name="node_name" default="data_recorder" description="Node name, one per recorder"/>
+  <arg name="output_directory" default="$(env HOME)" description="Directory for bags"/>
+  <arg name="prefix" default="continous" description="Bag name stem"/>
+  <arg name="autostart_recording" default="false" description="Start recording when the node starts"/>
+
+  <node pkg="data_recorder" exec="data_recorder" name="$(var node_name)" namespace="system" output="screen">
+    <param from="$(find-pkg-share data_recorder)/config/data_recorder.param.yaml"/>
+    <param name="mode" value="continuous"/>
+    <param name="output_directory" value="$(var output_directory)"/>
+    <param name="prefix" value="$(var prefix)"/>
+    <param name="autostart_recording" value="$(var autostart_recording)" type="bool"/>
+    <param name="mcap_config_file" value="$(find-pkg-share data_recorder)/config/mcap_writer_options.param.yaml"/>
+  </node>
+
+  <node pkg="topic_tools" exec="relay" name="$(var node_name)_diagnostics_relay" namespace="system" output="screen" args="/system/$(var node_name)/diagnostics /diagnostics"/>
+</launch>

@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>data_recorder</name>
+  <version>1.0.0</version>
+  <description>Start, stop, and snapshot MCAP recordings from ROS 2 services.</description>
+
+  <maintainer email="m.schratter@gmx.at">Markus Schratter</maintainer>
+
+  <license>Apache License 2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>libboost-dev</depend>
+  <depend>rclcpp</depend>
+  <depend>rmw</depend>
+  <depend>std_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>diagnostic_msgs</depend>
+  <depend>rosbag2_cpp</depend>
+  <depend>rosbag2_storage</depend>
+  <depend>rosbag2_transport</depend>
+  <exec_depend>rosbag2_storage_mcap</exec_depend>
+  <exec_depend>topic_tools</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

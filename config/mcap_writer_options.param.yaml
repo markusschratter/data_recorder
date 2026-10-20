@@ -1,0 +1,9 @@
+# mcap_writer_options.param.yml
+noChunkCRC: false
+noChunking: false
+noMessageIndex: false
+noSummary: false
+chunkSize: 786432
+compression: "Lz4"
+compressionLevel: "Fastest"
+forceCompression: false

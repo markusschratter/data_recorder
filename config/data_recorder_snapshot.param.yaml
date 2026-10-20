@@ -1,0 +1,34 @@
+# config/data_recorder_snapshot.param.yaml
+---
+
+/**:
+  ros__parameters:
+    use_timestamp: true
+    compression: true
+    record_all: false
+    mode: snapshot
+    snapshot_cache_mb: 1024          # ring buffer size
+    snapshot_post_trigger_s: 10      # keep recording this many seconds after a trigger; 0 stores the buffer immediately
+    tolerance_topic_rate: 5          # percent
+    publish_state_rate: 1            # diagnostics and recording_state rate, 0 disables
+    transient_local_topics:
+      - /tf_static
+    topics:
+      - /clock
+      - /tf
+      - /tf_static
+      - /diagnostics
+      - /localization/kinematic_state:100
+      - /localization/acceleration:100
+      - /vehicle/status/actuation_status
+      - /vehicle/status/control_mode
+      - /vehicle/status/steering_status
+      - /vehicle/status/steering_wheel_status
+      - /vehicle/status/velocity_status:100
+      - /sensing/gnss/pose_with_covariance:25
+      - /sensing/gnss/nav_sat_fix:25
+      - /sensing/imu/imu_data:100
+      - /sensing/lidar/front/points:10
+      - /sensing/camera/front/camera_info
+      - /sensing/camera/front/image_raw/compressed:10
+     

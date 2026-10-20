@@ -1,0 +1,13 @@
+# config/data_recorder_rest_api.param.yaml
+---
+
+/**:
+  ros__parameters:
+    bind_address: 0.0.0.0
+    port: 8080
+    service_timeout_s: 10.0
+    # URL name, then the absolute ROS node name (namespace included).
+    continuous:
+      - data_recorder:/system/data_recorder
+    snapshot:
+      - snapshot:/system/data_recorder_snapshot

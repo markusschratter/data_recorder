@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Recording Overview</title>
+  <link rel="stylesheet" href="style.css?v=9">
+</head>
+<body>
+  <div class="shell">
+    <header class="mast">
+      <div class="mast-top">
+        <p class="mark">data recorder</p>
+        <label class="api-pill">
+          <span class="dot" aria-hidden="true"></span>
+          API
+          <input id="api" type="url" value="http://127.0.0.1:8080" spellcheck="false">
+        </label>
+      </div>
+      <div class="mast-title">
+        <div>
+          <h1>Recording Overview</h1>
+          <p class="lede">Start, stop, and trigger the recorders from this page.</p>
+        </div>
+        <p id="summary">Looking for running recorders…</p>
+      </div>
+    </header>
+    <main id="recorders"></main>
+  </div>
+  <script src="app.js?v=7"></script>
+</body>
+</html>

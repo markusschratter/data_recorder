@@ -1,0 +1,15 @@
+<launch>
+  <arg name="node_name" default="data_recorder_snapshot" description="Node name, one per recorder"/>
+  <arg name="output_directory" default="$(env HOME)" description="Directory for stored snapshots"/>
+  <arg name="prefix" default="snapshot" description="Bag name stem"/>
+
+  <node pkg="data_recorder" exec="data_recorder" name="$(var node_name)" namespace="system" output="screen">
+    <param from="$(find-pkg-share data_recorder)/config/data_recorder_snapshot.param.yaml"/>
+    <param name="mode" value="snapshot"/>
+    <param name="output_directory" value="$(var output_directory)"/>
+    <param name="prefix" value="$(var prefix)"/>
+    <param name="mcap_config_file" value="$(find-pkg-share data_recorder)/config/mcap_writer_options.param.yaml"/>
+  </node>
+
+  <node pkg="topic_tools" exec="relay" name="$(var node_name)_diagnostics_relay" namespace="system" output="screen" args="/system/$(var node_name)/diagnostics /diagnostics"/>
+</launch>
