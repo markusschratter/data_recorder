@@ -154,15 +154,16 @@ Vehicle-level requirements (payload, speed, emergency stop) belong in a system r
 | ID | Requirement | Verification | Status |
 | --- | --- | --- | --- |
 | SW-HMI-001 | The operator page shall be provided as the static files `www/index.html`, `www/app.js`, and `www/style.css`. | Inspection | Implemented |
-| SW-HMI-002 | The page shall use an operator-entered API address, with the default `http://127.0.0.1:8080`. | Test | Implemented |
+| SW-HMI-002 | The page shall use an operator-entered API address. When none is stored, or the stored host is a loopback address and the page was opened on another host, the address shall be that page host on port `8080`. A page opened without a host shall use `http://127.0.0.1:8080`. | Test | Implemented |
 | SW-HMI-003 | The page shall store the API address in the browser and shall reuse it on the next open. | Test | Implemented |
 | SW-HMI-004 | The page shall refresh the recorder list and each recorder status every 2 seconds. | Test | Implemented |
-| SW-HMI-005 | A continuous recorder card shall show the state, the directory, the free disk space, the rate-check result, and Start and Stop controls. | Inspection | Implemented |
-| SW-HMI-006 | While continuous recording is active, the card shall show the start time and the duration. | Test | Implemented |
-| SW-HMI-007 | A snapshot recorder card shall show the last trigger time and a Trigger control. | Inspection | Implemented |
-| SW-HMI-008 | After Start, Stop, or Trigger, the page shall show `OK` when the command is accepted and `ERROR` when the command is rejected. | Test | Implemented |
-| SW-HMI-011 | When a later rate-check result is `OK` or `ERROR` and differs from the result at the time of the command, the page shall show the rate-check result. | Test | Implemented |
-| SW-HMI-012 | For a snapshot, the page shall show `OK` when the trigger is accepted, before the post-trigger interval has stored the MCAP file. | Test | Implemented |
+| SW-HMI-005 | A continuous recorder card shall show `Recording` in a filled green field while recording is active, and `No Recording` in a green outline while it is stopped. The card shall also show the directory, the free disk space, the MCAP split size, the MCAP split time, and one control that shows Start while stopped and Stop while recording. A split limit of 0 shall be shown as `-`. | Inspection | Implemented |
+| SW-HMI-006 | A continuous recorder card shall show the start time and the duration. While recording is stopped, both shall be shown as `-`. | Test | Implemented |
+| SW-HMI-007 | A snapshot recorder card shall show the last trigger time, the last snapshot, the free disk space, the directory, and a Trigger control. | Inspection | Implemented |
+| SW-HMI-008 | The card shall show `Error` when a command is rejected, the topic rate check fails, free disk space is below the minimum, or the recording directory is not available. The recorder reason shall be written beside `Error`. The topic control shall be below that error and below the failed-topic list. | Test | Implemented |
+| SW-HMI-011 | When a later rate-check result is `ERROR`, the card shall show `Error` with the reason `topic rate check`, and the topics that failed the check. When that result is `OK` and recording is stopped, the card shall show `No Recording`. | Test | Implemented |
+| SW-HMI-012 | For a snapshot, a rejected trigger shall show `Error`. An accepted trigger shall be shown by the command message before the post-trigger interval has stored the MCAP file. | Test | Implemented |
+| SW-HMI-013 | The card shall provide a control that shows the configured topics and hides them again. | Test | Implemented |
 
 ## Delivered configuration
 

@@ -1220,6 +1220,10 @@ void DataRecordingNode::publish_status()
     add_value("FreeDiskMB", disk.ok ? megabytes_text(disk.available) : "-");
     if (reported_mode == SessionMode::Continuous) {
       add_value("MinFreeDiskMB", std::to_string(min_free_disk_mb));
+      add_value("SplitSizeMB", std::to_string(static_cast<int>(get_parameter("split_size_mb").as_int())));
+      add_value(
+        "SplitDurationS",
+        std::to_string(static_cast<int>(get_parameter("split_duration_s").as_int())));
     }
     add_value("RateCheck", last_rate_message_.empty() ? "-" : (last_rate_success_ ? "OK" : "ERROR"));
     if (reported_mode == SessionMode::Continuous && below_min_free_disk(disk, min_free_disk_mb)) {
@@ -1230,6 +1234,23 @@ void DataRecordingNode::publish_status()
     for (std::size_t index = 0; index < failure_limit; ++index) {
       add_value("Rate", last_rate_failures_[index]);
     }
+  }
+
+  if (get_parameter("record_all").as_bool()) {
+    add_value("Topic", "All topics");
+  }
+  const auto topic_entries = get_parameter("topics").as_string_array();
+  for (const auto & entry : topic_entries) {
+    const TopicSpec spec = parse_topic_entry(entry);
+    if (spec.name.empty() || spec.name == "/") {
+      continue;
+    }
+    std::ostringstream topic_text;
+    topic_text << spec.name;
+    if (spec.expected_hz) {
+      topic_text << "  " << std::fixed << std::setprecision(0) << *spec.expected_hz << " Hz";
+    }
+    add_value("Topic", topic_text.str());
   }
 
   diagnostics.status.push_back(status);

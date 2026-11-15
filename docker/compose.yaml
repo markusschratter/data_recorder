@@ -1,0 +1,7 @@
+services:
+  website:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "${WEBSITE_PORT:-8081}:80"

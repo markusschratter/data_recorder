@@ -329,7 +329,10 @@ StatusSnapshot DataRecordingRestNode::snapshot_of(const RecorderTarget & recorde
       snapshot.rate_check = diagnostic_value(recorder.diagnostics, "RateCheck");
       snapshot.free_disk_mb = diagnostic_value(recorder.diagnostics, "FreeDiskMB");
       snapshot.min_free_disk_mb = diagnostic_value(recorder.diagnostics, "MinFreeDiskMB");
+      snapshot.split_size_mb = diagnostic_value(recorder.diagnostics, "SplitSizeMB");
+      snapshot.split_duration_s = diagnostic_value(recorder.diagnostics, "SplitDurationS");
       snapshot.rates = diagnostic_values(recorder.diagnostics, "Rate");
+      snapshot.topics = diagnostic_values(recorder.diagnostics, "Topic");
       snapshot.diagnostics_level = diagnostic_level(recorder.diagnostics.level);
       snapshot.diagnostics_message = recorder.diagnostics.message;
     }

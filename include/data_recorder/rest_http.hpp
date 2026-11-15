@@ -81,7 +81,10 @@ struct StatusSnapshot
   std::string rate_check;
   std::string free_disk_mb;
   std::string min_free_disk_mb;
+  std::string split_size_mb;
+  std::string split_duration_s;
   std::vector<std::string> rates;
+  std::vector<std::string> topics;
   std::string diagnostics_level;
   std::string diagnostics_message{"No diagnostics received"};
   bool services_ready{false};

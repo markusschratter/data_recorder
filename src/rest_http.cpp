@@ -276,7 +276,10 @@ std::string status_json(const StatusSnapshot & status)
   json.add_string("rate_check", status.rate_check);
   json.add_string("free_disk_mb", status.free_disk_mb);
   json.add_string("min_free_disk_mb", status.min_free_disk_mb);
+  json.add_string("split_size_mb", status.split_size_mb);
+  json.add_string("split_duration_s", status.split_duration_s);
   json.add_string_array("rates", status.rates);
+  json.add_string_array("topics", status.topics);
   json.add_string("diagnostics_level", status.diagnostics_level);
   json.add_string("diagnostics_message", status.diagnostics_message);
   json.add_bool("services_ready", status.services_ready);
