@@ -1,6 +1,6 @@
 # data_recorder
 
-C++ recorder for ROS 2 Jazzy. It writes MCAP bags and is controlled with services. Storage is always MCAP. On a continuous recorder, topic selection, split limits, and compression apply on the next start. A snapshot recorder keeps the parameters from its launch file.
+`data_recorder` controls ROS 2 bag recording and provides the interface to operate it. Commands go through ROS 2 services and a REST API. Each recorder is configured with the topics to record, optional expected rates, split limits, compression, and whether recording starts automatically when the node starts. While a recording is active, the node monitors free disk space and topic rates and publishes that state as diagnostics.
 
 ```mermaid
 flowchart LR
@@ -123,12 +123,4 @@ docker compose up --build
 ```
 
 Run that from the `docker` directory. The host port is `WEBSITE_PORT` in `docker/compose.yaml` and defaults to `8081`. Open `http://<this-host>:8081` from a phone on the same network. The API field uses that same host on port `8080`, so the IP does not have to be typed. A saved `127.0.0.1` is replaced by that host. Port `8081` is only the page. Port `8080` stays the REST API.
-
-## Build
-
-Build this package in your ADE session:
-
-```bash
-colcon build --packages-select data_recorder
-```
 
