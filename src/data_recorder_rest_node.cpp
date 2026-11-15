@@ -53,9 +53,9 @@ const char * diagnostic_level(const std::uint8_t level)
   }
 }
 
-const char * kind_label(const RecorderKind kind)
+const char * kind_label(const RecorderKind /*kind*/)
 {
-  return kind == RecorderKind::Snapshot ? "snapshot" : "continuous";
+  return "continuous";
 }
 
 std::pair<std::string, std::string> parse_recorder_entry(const std::string & entry)
@@ -86,8 +86,6 @@ DataRecordingRestNode::DataRecordingRestNode(const rclcpp::NodeOptions & options
   declare_parameter<double>("service_timeout_s", 10.0);
   declare_parameter<std::vector<std::string>>(
     "continuous", std::vector<std::string>{"data_recorder:/system/data_recorder"});
-  declare_parameter<std::vector<std::string>>(
-    "snapshot", std::vector<std::string>{"snapshot:/system/data_recorder_snapshot"});
 
   const auto bind_address = get_parameter("bind_address").as_string();
   const auto port = get_parameter("port").as_int();
@@ -104,9 +102,8 @@ DataRecordingRestNode::DataRecordingRestNode(const rclcpp::NodeOptions & options
   service_timeout_ = std::chrono::milliseconds(static_cast<int>(timeout_s * 1000.0));
 
   add_recorders(get_parameter("continuous").as_string_array(), RecorderKind::Continuous);
-  add_recorders(get_parameter("snapshot").as_string_array(), RecorderKind::Snapshot);
   if (recorders_.empty()) {
-    throw std::runtime_error("continuous and snapshot recorder lists are both empty");
+    throw std::runtime_error("continuous recorder list is empty");
   }
 
   server_ = std::make_unique<RestServer>(
@@ -158,7 +155,6 @@ void DataRecordingRestNode::add_recorders(
     const auto prefix = recorder->node_name + "/";
     recorder->start_client = create_client<std_srvs::srv::Trigger>(prefix + "start_recording");
     recorder->stop_client = create_client<std_srvs::srv::Trigger>(prefix + "stop_recording");
-    recorder->snapshot_client = create_client<std_srvs::srv::Trigger>(prefix + "snapshot");
     recorder->parameters_client =
       std::make_shared<rclcpp::AsyncParametersClient>(this, recorder->node_name);
 
@@ -216,22 +212,11 @@ HttpResult DataRecordingRestNode::handle_request(
     return {404, result_json(false, "Unknown recorder '" + parsed.name + "'")};
   }
 
-  const bool snapshot_action = route == RestRoute::Snapshot;
-  const bool continuous_action = route == RestRoute::Start || route == RestRoute::Stop;
-  if (snapshot_action && recorder->kind != RecorderKind::Snapshot) {
-    return {404, result_json(false, "snapshot applies to snapshot recorders")};
-  }
-  if (continuous_action && recorder->kind != RecorderKind::Continuous) {
-    return {404, result_json(false, "start and stop apply to continuous recorders")};
-  }
-
   switch (route) {
     case RestRoute::Start:
       return call_trigger(recorder->start_client);
     case RestRoute::Stop:
       return call_trigger(recorder->stop_client);
-    case RestRoute::Snapshot:
-      return call_trigger(recorder->snapshot_client);
     case RestRoute::Status:
       return status_response(*recorder);
     case RestRoute::Nodes:
@@ -321,11 +306,9 @@ StatusSnapshot DataRecordingRestNode::snapshot_of(const RecorderTarget & recorde
       snapshot.mode = diagnostic_value(recorder.diagnostics, "Mode");
       snapshot.directory = diagnostic_value(recorder.diagnostics, "Directory");
       snapshot.information = diagnostic_value(recorder.diagnostics, "Information");
-      snapshot.last_snapshot = diagnostic_value(recorder.diagnostics, "LastSnapshot");
       snapshot.recording_started = diagnostic_value(recorder.diagnostics, "RecordingStarted");
       snapshot.recording_stopped = diagnostic_value(recorder.diagnostics, "RecordingStopped");
       snapshot.recording_duration = diagnostic_value(recorder.diagnostics, "RecordingDuration");
-      snapshot.last_trigger = diagnostic_value(recorder.diagnostics, "LastTrigger");
       snapshot.rate_check = diagnostic_value(recorder.diagnostics, "RateCheck");
       snapshot.free_disk_mb = diagnostic_value(recorder.diagnostics, "FreeDiskMB");
       snapshot.min_free_disk_mb = diagnostic_value(recorder.diagnostics, "MinFreeDiskMB");
@@ -337,9 +320,7 @@ StatusSnapshot DataRecordingRestNode::snapshot_of(const RecorderTarget & recorde
       snapshot.diagnostics_message = recorder.diagnostics.message;
     }
   }
-  const auto & ready_client = recorder.kind == RecorderKind::Snapshot ?
-    recorder.snapshot_client : recorder.start_client;
-  snapshot.services_ready = ready_client && ready_client->service_is_ready();
+  snapshot.services_ready = recorder.start_client && recorder.start_client->service_is_ready();
   return snapshot;
 }
 

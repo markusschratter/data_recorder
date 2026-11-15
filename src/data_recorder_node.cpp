@@ -13,10 +13,8 @@
 
 #include "rclcpp/qos.hpp"
 #include "rmw/rmw.h"
-#include "rosbag2_storage/storage_interfaces/read_only_interface.hpp"
 #include "rosbag2_cpp/info.hpp"
 #include "rosbag2_cpp/writer.hpp"
-#include "rosbag2_storage/storage_factory.hpp"
 #include "rosbag2_storage/storage_options.hpp"
 #include "rosbag2_transport/record_options.hpp"
 #include "rosbag2_transport/recorder.hpp"
@@ -27,7 +25,6 @@ namespace
 {
 
 constexpr const char * kContinuous = "continuous";
-constexpr const char * kSnapshot = "snapshot";
 
 rclcpp::QoS transient_local_qos()
 {
@@ -93,9 +90,9 @@ std::string unique_bag_name(
   return candidate;
 }
 
-const char * mode_label(SessionMode mode)
+const char * mode_label(SessionMode /*mode*/)
 {
-  return mode == SessionMode::Snapshot ? kSnapshot : kContinuous;
+  return kContinuous;
 }
 
 bool parse_mode(const std::string & text, SessionMode & mode)
@@ -104,82 +101,7 @@ bool parse_mode(const std::string & text, SessionMode & mode)
     mode = SessionMode::Continuous;
     return true;
   }
-  if (text == kSnapshot) {
-    mode = SessionMode::Snapshot;
-    return true;
-  }
   return false;
-}
-
-std::filesystem::path resolve_bag_file(
-  const std::string & closed_file,
-  const std::filesystem::path & session_directory)
-{
-  if (closed_file.empty()) {
-    return {};
-  }
-
-  const std::filesystem::path raw(closed_file);
-  std::vector<std::filesystem::path> candidates;
-  if (raw.is_absolute()) {
-    candidates.push_back(raw);
-  }
-  candidates.push_back(session_directory / raw.filename());
-  candidates.push_back(session_directory / raw);
-  if (raw.extension() != ".mcap") {
-    candidates.push_back(std::filesystem::path(raw.string() + ".mcap"));
-    candidates.push_back(session_directory / (raw.filename().string() + ".mcap"));
-  }
-
-  for (const auto & candidate : candidates) {
-    std::error_code error;
-    if (std::filesystem::is_regular_file(candidate, error)) {
-      return candidate;
-    }
-  }
-  return {};
-}
-
-std::filesystem::path newest_mcap(
-  const std::filesystem::path & directory,
-  const std::filesystem::path & exclude)
-{
-  std::filesystem::path newest;
-  std::filesystem::file_time_type newest_time{};
-  std::error_code error;
-  if (!std::filesystem::is_directory(directory, error)) {
-    return {};
-  }
-  for (const auto & entry : std::filesystem::directory_iterator(directory, error)) {
-    if (error || entry.path().extension() != ".mcap") {
-      continue;
-    }
-    if (!exclude.empty() && entry.path() == exclude) {
-      continue;
-    }
-    const auto written = entry.last_write_time(error);
-    if (error) {
-      continue;
-    }
-    if (newest.empty() || written > newest_time) {
-      newest = entry.path();
-      newest_time = written;
-    }
-  }
-  return newest;
-}
-
-rosbag2_storage::BagMetadata read_mcap_metadata(const std::filesystem::path & mcap)
-{
-  rosbag2_storage::StorageFactory factory;
-  rosbag2_storage::StorageOptions options;
-  options.uri = mcap.string();
-  options.storage_id = "mcap";
-  auto reader = factory.open_read_only(options);
-  if (!reader) {
-    throw std::runtime_error("Could not read " + mcap.string());
-  }
-  return reader->get_metadata();
 }
 
 struct DiskSpace
@@ -251,8 +173,6 @@ DataRecordingNode::DataRecordingNode(const rclcpp::NodeOptions & options)
   declare_parameter<int>("tolerance_topic_rate", 5);
   declare_parameter<int>("publish_state_rate", 1);
   declare_parameter<std::string>("mode", kContinuous);
-  declare_parameter<int>("snapshot_cache_mb", 1024);
-  declare_parameter<int>("snapshot_post_trigger_s", 10);
   declare_parameter<std::string>("mcap_config_file", "");
 
   const auto latched = rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable();
@@ -270,11 +190,6 @@ DataRecordingNode::DataRecordingNode(const rclcpp::NodeOptions & options)
     std::bind(
       &DataRecordingNode::stop_recording, this,
       std::placeholders::_1, std::placeholders::_2));
-  snapshot_service_ = create_service<std_srvs::srv::Trigger>(
-    "~/snapshot",
-    std::bind(
-      &DataRecordingNode::snapshot, this,
-      std::placeholders::_1, std::placeholders::_2));
 
   parameter_callback_ = add_on_set_parameters_callback(
     std::bind(&DataRecordingNode::on_set_parameters, this, std::placeholders::_1));
@@ -286,9 +201,7 @@ DataRecordingNode::DataRecordingNode(const rclcpp::NodeOptions & options)
 
   publish_status();
 
-  const bool arm_on_start =
-    get_parameter("mode").as_string() == kSnapshot ||
-    get_parameter("autostart_recording").as_bool();
+  const bool arm_on_start = get_parameter("autostart_recording").as_bool();
   if (arm_on_start) {
     std::lock_guard<std::mutex> lock(session_mutex_);
     const ActionResult started = start_session_locked();
@@ -354,15 +267,6 @@ std::string DataRecordingNode::validate_config(const RecordingConfig & config) c
   if (config.publish_state_rate < 0) {
     errors.emplace_back("publish_state_rate must be >= 0");
   }
-  if (config.snapshot_cache_mb < 0) {
-    errors.emplace_back("snapshot_cache_mb must be >= 0");
-  }
-  if (config.snapshot_post_trigger_s < 0) {
-    errors.emplace_back("snapshot_post_trigger_s must be >= 0");
-  }
-  if (config.mode == SessionMode::Snapshot && config.snapshot_cache_mb <= 0) {
-    errors.emplace_back("snapshot_cache_mb must be > 0 in snapshot mode");
-  }
   for (const auto & topic : config.record_topics) {
     if (topic.empty() || topic == "/") {
       errors.emplace_back("topics contains an empty topic name");
@@ -413,14 +317,11 @@ std::string DataRecordingNode::load_config(RecordingConfig & config) const
   config.min_free_disk_mb = static_cast<int>(get_parameter("min_free_disk_mb").as_int());
   config.tolerance_topic_rate = static_cast<int>(get_parameter("tolerance_topic_rate").as_int());
   config.publish_state_rate = static_cast<int>(get_parameter("publish_state_rate").as_int());
-  config.snapshot_cache_mb = static_cast<int>(get_parameter("snapshot_cache_mb").as_int());
-  config.snapshot_post_trigger_s =
-    static_cast<int>(get_parameter("snapshot_post_trigger_s").as_int());
   config.mcap_config_file = mcap_config_file;
 
   std::string error;
   if (!parse_mode(mode, config.mode)) {
-    error = "mode must be continuous or snapshot";
+    error = "mode must be continuous";
   }
 
   config.record_topics.clear();
@@ -494,15 +395,11 @@ RecordingConfig DataRecordingNode::config_with_overrides(
       config.tolerance_topic_rate = static_cast<int>(parameter.as_int());
     } else if (name == "publish_state_rate") {
       config.publish_state_rate = static_cast<int>(parameter.as_int());
-    } else if (name == "snapshot_cache_mb") {
-      config.snapshot_cache_mb = static_cast<int>(parameter.as_int());
-    } else if (name == "snapshot_post_trigger_s") {
-      config.snapshot_post_trigger_s = static_cast<int>(parameter.as_int());
     } else if (name == "mcap_config_file") {
       config.mcap_config_file = parameter.as_string();
     } else if (name == "mode") {
       if (!parse_mode(parameter.as_string(), config.mode)) {
-        error = "mode must be continuous or snapshot";
+        error = "mode must be continuous";
         return config;
       }
     } else if (name == "topics") {
@@ -630,12 +527,6 @@ void DataRecordingNode::stop_recording(
   std::shared_ptr<std_srvs::srv::Trigger::Response> response)
 {
   std::lock_guard<std::mutex> lock(session_mutex_);
-  if (active_mode_ == SessionMode::Snapshot && session_active_) {
-    response->success = true;
-    response->message =
-      "Snapshot buffer stays armed. Call snapshot to store it.";
-    return;
-  }
   if (!session_active_) {
     response->success = false;
     response->message = "Not recording";
@@ -644,17 +535,6 @@ void DataRecordingNode::stop_recording(
   const ActionResult stopped = stop_session_locked();
   response->success = stopped.success;
   response->message = stopped.message;
-  publish_status();
-}
-
-void DataRecordingNode::snapshot(
-  const std::shared_ptr<std_srvs::srv::Trigger::Request> /*request*/,
-  std::shared_ptr<std_srvs::srv::Trigger::Response> response)
-{
-  std::lock_guard<std::mutex> lock(session_mutex_);
-  const ActionResult stored = store_snapshot_locked();
-  response->success = stored.success;
-  response->message = stored.message;
   publish_status();
 }
 
@@ -697,18 +577,12 @@ DataRecordingNode::ActionResult DataRecordingNode::start_session_locked()
 
   rosbag2_storage::StorageOptions storage;
   storage.storage_id = "mcap";
-  if (config.mode == SessionMode::Snapshot) {
-    storage.snapshot_mode = true;
-    storage.max_cache_size =
-      static_cast<uint64_t>(config.snapshot_cache_mb) * 1024ULL * 1024ULL;
-  } else {
-    if (config.split_size_mb > 0) {
-      storage.max_bagfile_size =
-        static_cast<uint64_t>(config.split_size_mb) * 1024ULL * 1024ULL;
-    }
-    if (config.split_duration_s > 0) {
-      storage.max_bagfile_duration = static_cast<uint64_t>(config.split_duration_s);
-    }
+  if (config.split_size_mb > 0) {
+    storage.max_bagfile_size =
+      static_cast<uint64_t>(config.split_size_mb) * 1024ULL * 1024ULL;
+  }
+  if (config.split_duration_s > 0) {
+    storage.max_bagfile_duration = static_cast<uint64_t>(config.split_duration_s);
   }
   if (config.compression) {
     if (!config.mcap_config_file.empty() &&
@@ -724,9 +598,7 @@ DataRecordingNode::ActionResult DataRecordingNode::start_session_locked()
 
   rosbag2_transport::RecordOptions record;
   record.all_topics = config.record_all;
-  record.disable_keyboard_controls = true;
   record.rmw_serialization_format = rmw_get_serialization_format();
-  record.use_sim_time = get_parameter("use_sim_time").as_bool();
   if (!config.record_all) {
     record.topics = topics;
   }
@@ -735,18 +607,24 @@ DataRecordingNode::ActionResult DataRecordingNode::start_session_locked()
     record.topic_qos_profile_overrides.emplace(topic, transient_qos);
   }
 
-  rosbag2_cpp::bag_events::WriterEventCallbacks callbacks;
-  callbacks.write_split_callback =
-    [this](rosbag2_cpp::bag_events::BagSplitInfo & info) {
-      on_bag_split(info);
-    };
-
   rclcpp::NodeOptions recorder_options;
   recorder_options.use_global_arguments(false);
   recorder_options.start_parameter_services(false);
+  std::vector<std::string> arguments{"--ros-args"};
+  bool have_arguments = false;
   const std::string ns = std::string(get_namespace());
   if (!ns.empty() && ns != "/") {
-    recorder_options.arguments({"--ros-args", "-r", "__ns:=" + ns});
+    arguments.push_back("-r");
+    arguments.push_back("__ns:=" + ns);
+    have_arguments = true;
+  }
+  if (get_parameter("use_sim_time").as_bool()) {
+    arguments.push_back("-p");
+    arguments.push_back("use_sim_time:=true");
+    have_arguments = true;
+  }
+  if (have_arguments) {
+    recorder_options.arguments(arguments);
   }
 
   active_mode_ = config.mode;
@@ -760,7 +638,6 @@ DataRecordingNode::ActionResult DataRecordingNode::start_session_locked()
     session_directory_ = parent / bag_name;
     storage.uri = session_directory_.string();
     writer_ = std::make_shared<rosbag2_cpp::Writer>();
-    writer_->add_event_callbacks(callbacks);
     try {
       const std::string recorder_node_name = "_rosbag2_" + std::string(get_name());
       recorder_ = std::make_shared<rosbag2_transport::Recorder>(
@@ -808,15 +685,9 @@ DataRecordingNode::ActionResult DataRecordingNode::start_session_locked()
   ensure_transient_subscriptions();
 
   last_bag_directory_ = session_directory_.string();
-  std::ostringstream message;
-  if (config.mode == SessionMode::Snapshot) {
-    message << "Snapshot buffer armed (" << config.snapshot_cache_mb
-            << " MB) at " << session_directory_.string();
-  } else {
-    message << "Recording to " << session_directory_.string();
-  }
-  RCLCPP_INFO(get_logger(), "%s", message.str().c_str());
-  return {true, message.str()};
+  const std::string message = "Recording to " + session_directory_.string();
+  RCLCPP_INFO(get_logger(), "%s", message.c_str());
+  return {true, message};
 }
 
 DataRecordingNode::ActionResult DataRecordingNode::stop_session_locked()
@@ -835,7 +706,6 @@ DataRecordingNode::ActionResult DataRecordingNode::close_bag_and_check_rates_loc
     ~ClearFinalizing() {flag.store(false);}
   } clear_finalizing{finalizing_};
 
-  const SessionMode mode = active_mode_;
   const auto bag_directory = session_directory_;
   const auto expected = expected_hz_;
   const int tolerance = tolerance_topic_rate_;
@@ -847,10 +717,6 @@ DataRecordingNode::ActionResult DataRecordingNode::close_bag_and_check_rates_loc
     recording_started_valid_ = false;
   }
 
-  if (snapshot_follow_active_) {
-    finish_snapshot_follow_locked();
-  }
-
   std::string stop_error;
   if (recorder_) {
     try {
@@ -860,172 +726,41 @@ DataRecordingNode::ActionResult DataRecordingNode::close_bag_and_check_rates_loc
     }
   }
 
-  if (!stop_error.empty() && mode != SessionMode::Snapshot) {
+  if (!stop_error.empty()) {
     RCLCPP_ERROR(get_logger(), "Stopping the recorder failed: %s", stop_error.c_str());
   }
 
   ActionResult result;
-  if (mode == SessionMode::Snapshot) {
-    result.success = stop_error.empty();
-    result.message = stop_error.empty() ?
-      "Snapshot buffer stopped. Unstored messages were discarded." :
-      stop_error;
-  } else {
-    try {
-      rosbag2_cpp::Info info;
-      const auto metadata = info.read_metadata(bag_directory.string(), "mcap");
-      const RateReport report = write_topic_rate_report(
-        bag_directory, metadata, expected, static_cast<double>(tolerance));
-      last_rate_success_ = report.success;
-      last_rate_message_ = report.message;
-      last_rate_failures_ = report.failures;
-      const auto csv_path = bag_directory / "topic_rates.csv";
-      if (report.message.rfind("Could not write ", 0) != 0) {
-        RCLCPP_INFO(get_logger(), "Saved topic rate CSV to: %s", csv_path.string().c_str());
-      }
-      result.success = report.success;
-      result.message = "Bag: " + bag_directory.string() + ". " + report.message;
-      if (report.success) {
-        RCLCPP_INFO(get_logger(), "Recording check passed: %s", report.message.c_str());
-      } else {
-        RCLCPP_ERROR(get_logger(), "Recording check failed: %s", report.message.c_str());
-      }
-    } catch (const std::exception & ex) {
-      last_rate_success_ = false;
-      last_rate_message_ = ex.what();
-      last_rate_failures_.clear();
-      result.success = false;
-      result.message = "Bag: " + bag_directory.string() + ". " + ex.what();
-      RCLCPP_ERROR(get_logger(), "Recording check failed: %s", ex.what());
+  try {
+    rosbag2_cpp::Info info;
+    const auto metadata = info.read_metadata(bag_directory.string(), "mcap");
+    const RateReport report = write_topic_rate_report(
+      bag_directory, metadata, expected, static_cast<double>(tolerance));
+    last_rate_success_ = report.success;
+    last_rate_message_ = report.message;
+    last_rate_failures_ = report.failures;
+    const auto csv_path = bag_directory / "topic_rates.csv";
+    if (report.message.rfind("Could not write ", 0) != 0) {
+      RCLCPP_INFO(get_logger(), "Saved topic rate CSV to: %s", csv_path.string().c_str());
     }
-  }
-
-  last_bag_directory_ = bag_directory.string();
-  return result;
-}
-
-std::filesystem::path DataRecordingNode::take_snapshot_file_locked()
-{
-  repeat_cached_messages(now());
-  if (!writer_ || !writer_->take_snapshot()) {
-    throw std::runtime_error("Snapshot failed");
-  }
-
-  std::string closed_file;
-  std::string opened_file;
-  {
-    std::lock_guard<std::mutex> lock(closed_file_mutex_);
-    closed_file = last_closed_file_;
-    opened_file = last_opened_file_;
-  }
-  auto source = resolve_bag_file(closed_file, session_directory_);
-  if (source.empty()) {
-    source = newest_mcap(
-      session_directory_, resolve_bag_file(opened_file, session_directory_));
-  }
-  if (source.empty()) {
-    throw std::runtime_error("Snapshot was triggered, but the MCAP file could not be found");
-  }
-  return source;
-}
-
-DataRecordingNode::ActionResult DataRecordingNode::begin_snapshot_follow_locked(
-  const int post_trigger_s)
-{
-  if (snapshot_follow_active_) {
-    return {false, "A snapshot is already waiting to be stored"};
-  }
-  snapshot_follow_active_ = true;
-  snapshot_follow_timer_ = create_wall_timer(
-    std::chrono::seconds(post_trigger_s),
-    [this]() {
-      std::lock_guard<std::mutex> lock(session_mutex_);
-      if (snapshot_follow_timer_) {
-        snapshot_follow_timer_->cancel();
-        snapshot_follow_timer_.reset();
-      }
-      finish_snapshot_follow_locked();
-    });
-
-  std::ostringstream message;
-  message << "Snapshot triggered. Storing the buffer in " << post_trigger_s << "s.";
-  RCLCPP_INFO(get_logger(), "%s", message.str().c_str());
-  return {true, message.str()};
-}
-
-void DataRecordingNode::finish_snapshot_follow_locked()
-{
-  if (!snapshot_follow_active_) {
-    return;
-  }
-  snapshot_follow_active_ = false;
-  const ActionResult stored = store_snapshot_now_locked();
-  if (stored.success) {
-    RCLCPP_INFO(get_logger(), "%s", stored.message.c_str());
-  } else {
-    RCLCPP_ERROR(get_logger(), "%s", stored.message.c_str());
-  }
-}
-
-DataRecordingNode::ActionResult DataRecordingNode::store_snapshot_locked()
-{
-  if (active_mode_ != SessionMode::Snapshot) {
-    return {false, "Snapshot is available only in snapshot mode"};
-  }
-  if (!session_active_ || !writer_) {
-    return {false, "Ring buffer is not armed. Call start_recording first."};
-  }
-  if (snapshot_follow_active_) {
-    return {false, "A snapshot is already waiting to be stored"};
-  }
-  last_trigger_text_ = clock_text(now());
-  const int post_trigger_s = static_cast<int>(get_parameter("snapshot_post_trigger_s").as_int());
-  if (post_trigger_s > 0) {
-    return begin_snapshot_follow_locked(post_trigger_s);
-  }
-  return store_snapshot_now_locked();
-}
-
-DataRecordingNode::ActionResult DataRecordingNode::store_snapshot_now_locked()
-{
-  std::filesystem::path source;
-  try {
-    source = take_snapshot_file_locked();
-  } catch (const std::exception & ex) {
-    return {false, std::string("Snapshot failed: ") + ex.what()};
-  }
-
-  last_snapshot_directory_ = session_directory_.string();
-  last_bag_directory_ = session_directory_.string();
-
-  rosbag2_storage::BagMetadata metadata;
-  try {
-    metadata = read_mcap_metadata(source);
+    result.success = report.success;
+    result.message = "Bag: " + bag_directory.string() + ". " + report.message;
+    if (report.success) {
+      RCLCPP_INFO(get_logger(), "Recording check passed: %s", report.message.c_str());
+    } else {
+      RCLCPP_ERROR(get_logger(), "Recording check failed: %s", report.message.c_str());
+    }
   } catch (const std::exception & ex) {
     last_rate_success_ = false;
     last_rate_message_ = ex.what();
     last_rate_failures_.clear();
-    return {
-      false,
-      "Snapshot stored in " + session_directory_.string() + ". " + ex.what()};
+    result.success = false;
+    result.message = "Bag: " + bag_directory.string() + ". " + ex.what();
+    RCLCPP_ERROR(get_logger(), "Recording check failed: %s", ex.what());
   }
 
-  const RateReport report = write_topic_rate_report(
-    session_directory_, metadata, expected_hz_, static_cast<double>(tolerance_topic_rate_));
-  last_rate_success_ = report.success;
-  last_rate_message_ = report.message;
-  last_rate_failures_ = report.failures;
-  if (report.message.rfind("Could not write ", 0) != 0) {
-    RCLCPP_INFO(
-      get_logger(), "Saved topic rate CSV to: %s",
-      (session_directory_ / "topic_rates.csv").string().c_str());
-  }
-  RCLCPP_INFO(
-    get_logger(), "Stored snapshot %s in %s",
-    source.filename().string().c_str(), session_directory_.string().c_str());
-  return {
-    report.success,
-    "Stored snapshot in " + session_directory_.string() + ". " + report.message};
+  last_bag_directory_ = bag_directory.string();
+  return result;
 }
 
 void DataRecordingNode::reset_recorder_locked()
@@ -1124,20 +859,6 @@ void DataRecordingNode::repeat_cached_messages(const rclcpp::Time & stamp)
   }
 }
 
-void DataRecordingNode::on_bag_split(rosbag2_cpp::bag_events::BagSplitInfo & info)
-{
-  {
-    std::lock_guard<std::mutex> lock(closed_file_mutex_);
-    if (!info.closed_file.empty()) {
-      last_closed_file_ = info.closed_file;
-    }
-    last_opened_file_ = info.opened_file;
-  }
-  if (!info.opened_file.empty() && active_mode_ == SessionMode::Continuous) {
-    split_pending_ = true;
-  }
-}
-
 void DataRecordingNode::pump_transient_repeats()
 {
   ensure_transient_subscriptions();
@@ -1199,34 +920,25 @@ void DataRecordingNode::publish_status()
     }
     add_value("Recording", session_active_ ? "true" : "false");
     add_value("Mode", mode_label(reported_mode));
-    if (session_active_ && active_mode_ == SessionMode::Continuous) {
+    if (session_active_) {
       add_value("Directory", session_directory_.string());
       add_value("Information", "Recording directory: " + session_directory_.string());
-    } else if (session_active_ && active_mode_ == SessionMode::Snapshot) {
-      add_value("Directory", session_directory_.string());
-      add_value("Information", "Snapshot buffer armed");
     } else {
       add_value("Directory", last_bag_directory_.empty() ? "-" : last_bag_directory_);
       add_value("Information", "Not recording");
     }
-    add_value("LastSnapshot", last_snapshot_directory_.empty() ? "-" : last_snapshot_directory_);
-    if (reported_mode == SessionMode::Continuous && session_active_ && recording_started_valid_) {
+    if (session_active_ && recording_started_valid_) {
       add_value("RecordingStarted", recording_started_text_);
       add_value("RecordingDuration", duration_text(now() - recording_started_time_));
     }
-    if (reported_mode == SessionMode::Snapshot) {
-      add_value("LastTrigger", last_trigger_text_);
-    }
     add_value("FreeDiskMB", disk.ok ? megabytes_text(disk.available) : "-");
-    if (reported_mode == SessionMode::Continuous) {
-      add_value("MinFreeDiskMB", std::to_string(min_free_disk_mb));
-      add_value("SplitSizeMB", std::to_string(static_cast<int>(get_parameter("split_size_mb").as_int())));
-      add_value(
-        "SplitDurationS",
-        std::to_string(static_cast<int>(get_parameter("split_duration_s").as_int())));
-    }
+    add_value("MinFreeDiskMB", std::to_string(min_free_disk_mb));
+    add_value("SplitSizeMB", std::to_string(static_cast<int>(get_parameter("split_size_mb").as_int())));
+    add_value(
+      "SplitDurationS",
+      std::to_string(static_cast<int>(get_parameter("split_duration_s").as_int())));
     add_value("RateCheck", last_rate_message_.empty() ? "-" : (last_rate_success_ ? "OK" : "ERROR"));
-    if (reported_mode == SessionMode::Continuous && below_min_free_disk(disk, min_free_disk_mb)) {
+    if (below_min_free_disk(disk, min_free_disk_mb)) {
       status.level = diagnostic_msgs::msg::DiagnosticStatus::ERROR;
       status.message = "Free disk space below minimum";
     }

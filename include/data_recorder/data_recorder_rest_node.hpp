@@ -17,8 +17,7 @@ namespace data_recorder
 
 enum class RecorderKind
 {
-  Continuous,
-  Snapshot
+  Continuous
 };
 
 struct RecorderTarget
@@ -29,7 +28,6 @@ struct RecorderTarget
 
   rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr start_client;
   rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr stop_client;
-  rclcpp::Client<std_srvs::srv::Trigger>::SharedPtr snapshot_client;
   rclcpp::AsyncParametersClient::SharedPtr parameters_client;
   rclcpp::Subscription<std_msgs::msg::Bool>::SharedPtr state_sub;
   rclcpp::Subscription<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr diagnostics_sub;

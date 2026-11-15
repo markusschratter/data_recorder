@@ -9,5 +9,3 @@
     # URL name, then the absolute ROS node name (namespace included).
     continuous:
       - data_recorder:/system/data_recorder
-    snapshot:
-      - snapshot:/system/data_recorder_snapshot

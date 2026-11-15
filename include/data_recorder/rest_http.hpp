@@ -42,7 +42,6 @@ enum class RestRoute
 {
   Start,
   Stop,
-  Snapshot,
   Status,
   Nodes,
   Storage,
@@ -73,11 +72,9 @@ struct StatusSnapshot
   std::string mode;
   std::string directory;
   std::string information;
-  std::string last_snapshot;
   std::string recording_started{"-"};
   std::string recording_stopped{"-"};
   std::string recording_duration{"-"};
-  std::string last_trigger{"-"};
   std::string rate_check;
   std::string free_disk_mb;
   std::string min_free_disk_mb;

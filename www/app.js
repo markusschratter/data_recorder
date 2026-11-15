@@ -297,9 +297,6 @@ function statusPill(text, tone) {
 }
 
 function cardStatus(node, status) {
-  if (node.kind === "snapshot") {
-    return null;
-  }
   if (status.recording) {
     return statusPill("Recording", "ok");
   }
@@ -331,21 +328,6 @@ function errorReason(status, remembered) {
     }
     if (/mode must be/i.test(text)) {
       return "invalid mode";
-    }
-    if (/snapshot_cache_mb/i.test(text)) {
-      return "invalid snapshot cache";
-    }
-    if (/already waiting/i.test(text)) {
-      return "snapshot already waiting";
-    }
-    if (/only in snapshot mode/i.test(text)) {
-      return "snapshot only";
-    }
-    if (/not armed/i.test(text)) {
-      return "snapshot not armed";
-    }
-    if (/^Snapshot failed/i.test(text)) {
-      return "snapshot failed";
     }
     if (/failed to start/i.test(text)) {
       return "could not start";
@@ -450,24 +432,14 @@ function renderCard(node, status) {
   heading.append(title, kind);
 
   const facts = document.createElement("dl");
-  const rows = [];
-  if (node.kind === "snapshot") {
-    rows.push(
-      ["Last trigger", status.last_trigger],
-      ["Last snapshot", status.last_snapshot],
-      ["Free disk", diskText(status.free_disk_mb)],
-      ["Directory", status.directory],
-    );
-  } else {
-    rows.push(
-      ["Started", status.recording_started],
-      ["Since start", status.recording_duration],
-      ["Free disk", diskText(status.free_disk_mb)],
-      ["MCAP split size", sizeText(status.split_size_mb)],
-      ["MCAP split time", durationText(status.split_duration_s)],
-      ["Directory", status.directory],
-    );
-  }
+  const rows = [
+    ["Started", status.recording_started],
+    ["Since start", status.recording_duration],
+    ["Free disk", diskText(status.free_disk_mb)],
+    ["MCAP split size", sizeText(status.split_size_mb)],
+    ["MCAP split time", durationText(status.split_duration_s)],
+    ["Directory", status.directory],
+  ];
   for (const [label, value] of rows) {
     facts.append(field(label, value));
   }
@@ -529,10 +501,6 @@ function renderCard(node, status) {
     refresh();
   }
 
-  if (node.kind === "snapshot") {
-    actions.append(button("Trigger", "", () => run("/recording/" + node.id + "/trigger")));
-  }
-
   const topicsButton = document.createElement("button");
   topicsButton.type = "button";
   topicsButton.className = "stop fixed-width";
@@ -563,16 +531,14 @@ function renderCard(node, status) {
   if (statusMark) {
     statusRow.append(statusMark);
   }
-  if (node.kind !== "snapshot") {
-    const recording = Boolean(status.recording);
-    statusRow.append(button(
-      recording ? "Stop" : "Start",
-      "command",
-      () => run(recording
-        ? "/recording/" + node.id + "/stop"
-        : "/recording/" + node.id + "/start"),
-    ));
-  }
+  const recording = Boolean(status.recording);
+  statusRow.append(button(
+    recording ? "Stop" : "Start",
+    "command",
+    () => run(recording
+      ? "/recording/" + node.id + "/stop"
+      : "/recording/" + node.id + "/start"),
+  ));
   card.append(heading);
   if (statusRow.childElementCount > 0) {
     card.append(statusRow);
@@ -620,7 +586,7 @@ async function refresh() {
     if (nodes.length === 0) {
       const empty = document.createElement("p");
       empty.className = "empty";
-      empty.textContent = "Start a continuous or snapshot recorder, then this page will show it.";
+      empty.textContent = "Start a recorder, then this page will show it.";
       recorders.replaceChildren(empty);
     }
   } catch (error) {

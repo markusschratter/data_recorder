@@ -220,9 +220,6 @@ RestRoute classify_route(const std::string & method, const std::string & path)
   if (command && path == "/recording/stop") {
     return RestRoute::Stop;
   }
-  if (command && (path == "/recording/snapshot" || path == "/recording/trigger")) {
-    return RestRoute::Snapshot;
-  }
   if (method == "GET" && path == "/recording/status") {
     return RestRoute::Status;
   }
@@ -242,8 +239,7 @@ RestRoute classify_route(const std::string & method, const std::string & path)
   }
 
   const bool known =
-    path == "/recording/start" || path == "/recording/stop" || path == "/recording/snapshot" ||
-    path == "/recording/trigger" ||
+    path == "/recording/start" || path == "/recording/stop" ||
     path == "/recording/status" || path == "/recording/nodes" || path == "/recording/storage" || path == "/disk" ||
     prefix_path;
   return known ? RestRoute::MethodNotAllowed : RestRoute::NotFound;
@@ -268,11 +264,9 @@ std::string status_json(const StatusSnapshot & status)
   json.add_string("mode", status.mode);
   json.add_string("directory", status.directory);
   json.add_string("information", status.information);
-  json.add_string("last_snapshot", status.last_snapshot);
   json.add_string("recording_started", status.recording_started);
   json.add_string("recording_stopped", status.recording_stopped);
   json.add_string("recording_duration", status.recording_duration);
-  json.add_string("last_trigger", status.last_trigger);
   json.add_string("rate_check", status.rate_check);
   json.add_string("free_disk_mb", status.free_disk_mb);
   json.add_string("min_free_disk_mb", status.min_free_disk_mb);

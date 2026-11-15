@@ -3,7 +3,7 @@
 <package format="3">
   <name>data_recorder</name>
   <version>1.0.0</version>
-  <description>Start, stop, and snapshot MCAP recordings from ROS 2 services.</description>
+  <description>Start and stop MCAP recordings from ROS 2 services.</description>
 
   <maintainer email="m.schratter@gmx.at">Markus Schratter</maintainer>
 

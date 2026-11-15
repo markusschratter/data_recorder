@@ -18,7 +18,6 @@
 #include "rclcpp/generic_subscription.hpp"
 #include "rclcpp/rclcpp.hpp"
 #include "rclcpp/serialized_message.hpp"
-#include "rosbag2_cpp/bag_events.hpp"
 #include "std_msgs/msg/bool.hpp"
 #include "std_srvs/srv/trigger.hpp"
 
@@ -37,8 +36,7 @@ namespace data_recorder
 
 enum class SessionMode
 {
-  Continuous,
-  Snapshot
+  Continuous
 };
 
 struct RecordingConfig
@@ -55,8 +53,6 @@ struct RecordingConfig
   int min_free_disk_mb{0};
   int tolerance_topic_rate{5};
   int publish_state_rate{1};
-  int snapshot_cache_mb{1024};
-  int snapshot_post_trigger_s{10};
   std::string mcap_config_file;
   std::vector<std::string> record_topics;
   std::map<std::string, double> expected_hz;
@@ -99,18 +95,10 @@ private:
   void stop_recording(
     const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
     std::shared_ptr<std_srvs::srv::Trigger::Response> response);
-  void snapshot(
-    const std::shared_ptr<std_srvs::srv::Trigger::Request> request,
-    std::shared_ptr<std_srvs::srv::Trigger::Response> response);
 
   ActionResult start_session_locked();
   ActionResult close_bag_and_check_rates_locked();
   ActionResult stop_session_locked();
-  ActionResult store_snapshot_locked();
-  ActionResult store_snapshot_now_locked();
-  ActionResult begin_snapshot_follow_locked(int post_trigger_s);
-  void finish_snapshot_follow_locked();
-  std::filesystem::path take_snapshot_file_locked();
 
   void reset_recorder_locked();
   void ensure_transient_subscriptions();
@@ -119,7 +107,6 @@ private:
     const std::string & type,
     const std::shared_ptr<rclcpp::SerializedMessage> & message);
   void repeat_cached_messages(const rclcpp::Time & stamp);
-  void on_bag_split(rosbag2_cpp::bag_events::BagSplitInfo & info);
   void pump_transient_repeats();
   void on_status_timer();
   void enforce_continuous_disk_limit();
@@ -128,7 +115,6 @@ private:
 
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr start_service_;
   rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr stop_service_;
-  rclcpp::Service<std_srvs::srv::Trigger>::SharedPtr snapshot_service_;
   rclcpp::Publisher<std_msgs::msg::Bool>::SharedPtr state_pub_;
   rclcpp::Publisher<diagnostic_msgs::msg::DiagnosticArray>::SharedPtr diagnostics_pub_;
   rclcpp::TimerBase::SharedPtr status_timer_;
@@ -151,20 +137,13 @@ private:
   std::map<std::string, double> expected_hz_;
   std::vector<std::string> transient_topics_;
   std::string last_bag_directory_;
-  std::string last_snapshot_directory_;
-  bool snapshot_follow_active_{false};
-  rclcpp::TimerBase::SharedPtr snapshot_follow_timer_;
   bool last_rate_success_{true};
   std::string last_rate_message_;
   std::vector<std::string> last_rate_failures_;
   bool recording_started_valid_{false};
   rclcpp::Time recording_started_time_{0, 0, RCL_ROS_TIME};
   std::string recording_started_text_{"-"};
-  std::string last_trigger_text_{"-"};
 
-  std::mutex closed_file_mutex_;
-  std::string last_closed_file_;
-  std::string last_opened_file_;
   std::atomic<bool> split_pending_{false};
 
   std::mutex cache_mutex_;
